@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Outbreak Early Warning — Surveillance Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --border: #e2e6ea;
+    --text: #1a1d23;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --danger: #dc2626;
+    --warning: #d97706;
+    --success: #16a34a;
+    --radius: 10px;
+  }
+
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; }
+
+  header {
+    background: #1a2744;
+    color: #fff;
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.01em; }
+  header .badge { background: var(--danger); color: #fff; font-size: 11px;
+    padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+  .last-updated { font-size: 11px; color: #9ca3af; }
+
+  main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+
+  /* Filter bar */
+  .filters {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .filters select, .filters input {
+    padding: 6px 10px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 13px; background: var(--card);
+    color: var(--text);
+  }
+  .filters button {
+    padding: 6px 14px; background: var(--accent); color: #fff;
+    border: none; border-radius: 6px; font-size: 13px; cursor: pointer;
+    font-weight: 500;
+  }
+  .filters button:hover { background: #1d4ed8; }
+
+  /* Stat cards */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px; margin-bottom: 20px; }
+  .stat-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px;
+  }
+  .stat-card .label { font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; line-height: 1; }
+  .stat-card.danger .value { color: var(--danger); }
+  .stat-card.warning .value { color: var(--warning); }
+  .stat-card.success .value { color: var(--success); }
+
+  /* Alerts banner */
+  #alerts-banner { margin-bottom: 20px; }
+  .alert-item {
+    background: #fff7ed; border: 1px solid #fed7aa;
+    border-left: 4px solid var(--warning);
+    border-radius: var(--radius); padding: 12px 16px; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .alert-item .icon { font-size: 20px; }
+  .alert-item strong { display: block; font-size: 13px; font-weight: 600; }
+  .alert-item span { font-size: 12px; color: var(--muted); }
+
+  /* Charts */
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+  @media (max-width: 800px) { .charts { grid-template-columns: 1fr; } }
+  .chart-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .chart-card h3 { font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--muted); margin-bottom: 12px; }
+  .chart-card canvas { max-height: 220px; }
+
+  /* Report table */
+  .table-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .table-header {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .table-header h3 { font-size: 13px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left; padding: 10px 12px; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+    background: #f8fafc; border-bottom: 1px solid var(--border);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 13px;
+    vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8fafc; }
+
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 20px;
+    font-size: 11px; font-weight: 600;
+  }
+  .pill.fever    { background: #fef3c7; color: #92400e; }
+  .pill.diarrhea { background: #dcfce7; color: #166534; }
+  .pill.respiratory { background: #dbeafe; color: #1e3a8a; }
+  .pill.rash     { background: #fce7f3; color: #831843; }
+  .pill.death    { background: #fee2e2; color: #7f1d1d; }
+  .pill.animal   { background: #f3e8ff; color: #4c1d95; }
+  .pill.other    { background: #f1f5f9; color: #475569; }
+
+  .status-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 20px;
+    font-size: 11px; font-weight: 600; cursor: pointer; border: none;
+    font-family: inherit;
+  }
+  .status-pill.new       { background: #dbeafe; color: #1e40af; }
+  .status-pill.reviewed  { background: #dcfce7; color: #14532d; }
+  .status-pill.escalated { background: #fee2e2; color: #7f1d1d; }
+  .status-pill.closed    { background: #f1f5f9; color: #475569; }
+
+  .obs-text { max-width: 260px; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; color: var(--muted); font-size: 12px; }
+
+  .empty { text-align: center; padding: 40px; color: var(--muted); }
+  .loading { text-align: center; padding: 40px; color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏥 Outbreak Early Warning — Surveillance Dashboard</h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span id="alert-count-badge" class="badge" style="display:none"></span>
+    <span class="last-updated" id="last-updated"></span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Filters -->
+  <div class="filters">
+    <select id="filter-days">
+      <option value="1">Last 24h</option>
+      <option value="7" selected>Last 7 days</option>
+      <option value="14">Last 14 days</option>
+      <option value="30">Last 30 days</option>
+    </select>
+    <select id="filter-symptom">
+      <option value="">All symptoms</option>
+      <option value="fever">Fever</option>
+      <option value="diarrhea">Diarrhea / vomiting</option>
+      <option value="respiratory">Respiratory</option>
+      <option value="rash">Rash</option>
+      <option value="death">Unusual death</option>
+      <option value="animal">Animal-related</option>
+      <option value="other">Other</option>
+    </select>
+    <select id="filter-status">
+      <option value="">All statuses</option>
+      <option value="new">New</option>
+      <option value="reviewed">Reviewed</option>
+      <option value="escalated">Escalated</option>
+      <option value="closed">Closed</option>
+    </select>
+    <input type="text" id="filter-district" placeholder="Filter by district…" style="width:180px">
+    <button onclick="load()">Refresh</button>
+    <span style="margin-left:auto;font-size:12px;color:var(--muted)">Auto-refreshes every 60s</span>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">Total reports</div>
+      <div class="value" id="s-total">—</div>
+    </div>
+    <div class="stat-card warning">
+      <div class="label">Pending review</div>
+      <div class="value" id="s-pending">—</div>
+    </div>
+    <div class="stat-card danger">
+      <div class="label">Escalated</div>
+      <div class="value" id="s-escalated">—</div>
+    </div>
+    <div class="stat-card danger">
+      <div class="label">Active alerts</div>
+      <div class="value" id="s-alerts">—</div>
+    </div>
+  </div>
+
+  <!-- Alert banners -->
+  <div id="alerts-banner"></div>
+
+  <!-- Charts -->
+  <div class="charts">
+    <div class="chart-card">
+      <h3>Reports by symptom</h3>
+      <canvas id="chart-symptom"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>Reports per day</h3>
+      <canvas id="chart-trend"></canvas>
+    </div>
+  </div>
+
+  <!-- Report table -->
+  <div class="table-card">
+    <div class="table-header">
+      <h3>Individual reports</h3>
+      <span id="report-count" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+    <div id="table-container">
+      <div class="loading">Loading reports…</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+let symptomChart, trendChart;
+
+const SYMPTOM_COLORS = {
+  fever:       '#f59e0b',
+  diarrhea:    '#10b981',
+  respiratory: '#3b82f6',
+  rash:        '#ec4899',
+  death:       '#ef4444',
+  animal:      '#8b5cf6',
+  other:       '#94a3b8',
+};
+
+function params() {
+  return new URLSearchParams({
+    days:    document.getElementById('filter-days').value,
+    symptom: document.getElementById('filter-symptom').value,
+    status:  document.getElementById('filter-status').value,
+    district:document.getElementById('filter-district').value,
+  }).toString();
+}
+
+async function load() {
+  const p = params();
+  const days = document.getElementById('filter-days').value;
+
+  const [reports, stats, alerts] = await Promise.all([
+    fetch(`/api/reports?${p}`).then(r => r.json()).catch(() => []),
+    fetch(`/api/stats?days=${days}`).then(r => r.json()).catch(() => ({})),
+    fetch('/api/alerts').then(r => r.json()).catch(() => []),
+  ]);
+
+  renderStats(stats, alerts);
+  renderAlerts(alerts);
+  renderCharts(stats);
+  renderTable(reports);
+  document.getElementById('last-updated').textContent =
+    'Updated ' + new Date().toLocaleTimeString();
+}
+
+function renderStats(stats, alerts) {
+  const t = stats.totals || {};
+  document.getElementById('s-total').textContent     = t.total     || 0;
+  document.getElementById('s-pending').textContent   = t.pending   || 0;
+  document.getElementById('s-escalated').textContent = t.escalated || 0;
+  document.getElementById('s-alerts').textContent    = alerts.length;
+
+  const badge = document.getElementById('alert-count-badge');
+  if (alerts.length > 0) {
+    badge.textContent = alerts.length + ' alert' + (alerts.length > 1 ? 's' : '');
+    badge.style.display = 'inline';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderAlerts(alerts) {
+  const el = document.getElementById('alerts-banner');
+  if (!alerts.length) { el.innerHTML = ''; return; }
+  el.innerHTML = alerts.map(a => `
+    <div class="alert-item">
+      <span class="icon">⚠️</span>
+      <div>
+        <strong>${a.district} — ${a.symptom_type}</strong>
+        <span>${a.report_count} reports · ~${a.estimated_cases} estimated cases · last report ${timeAgo(a.last_report)}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderCharts(stats) {
+  const bySymptom = stats.bySymptom || [];
+  const byDay     = stats.byDay     || [];
+
+  // Symptom doughnut
+  const sCtx = document.getElementById('chart-symptom').getContext('2d');
+  if (symptomChart) symptomChart.destroy();
+  symptomChart = new Chart(sCtx, {
+    type: 'doughnut',
+    data: {
+      labels: bySymptom.map(r => r.symptom_type || 'unknown'),
+      datasets: [{
+        data: bySymptom.map(r => r.count),
+        backgroundColor: bySymptom.map(r => SYMPTOM_COLORS[r.symptom_type] || '#94a3b8'),
+        borderWidth: 2,
+        borderColor: '#fff',
+      }],
+    },
+    options: {
+      plugins: { legend: { position: 'right', labels: { font: { size: 12 }, padding: 12 } } },
+      cutout: '60%',
+    },
+  });
+
+  // Trend line
+  const tCtx = document.getElementById('chart-trend').getContext('2d');
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(tCtx, {
+    type: 'bar',
+    data: {
+      labels: byDay.map(r => r.date ? r.date.slice(5) : ''),
+      datasets: [{
+        label: 'Reports',
+        data: byDay.map(r => r.count),
+        backgroundColor: '#3b82f6',
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      scales: {
+        y: { beginAtZero: true, ticks: { stepSize: 1 } },
+        x: { grid: { display: false } },
+      },
+      plugins: { legend: { display: false } },
+    },
+  });
+}
+
+function renderTable(reports) {
+  const container = document.getElementById('table-container');
+  document.getElementById('report-count').textContent = reports.length + ' reports';
+
+  if (!reports.length) {
+    container.innerHTML = '<div class="empty">No reports found for the selected filters.</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Time</th>
+          <th>District</th>
+          <th>Symptom</th>
+          <th>Affected</th>
+          <th>Age</th>
+          <th>Onset</th>
+          <th>Observation</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${reports.map(r => `
+          <tr>
+            <td style="color:var(--muted);font-size:11px">#${r.id}</td>
+            <td style="white-space:nowrap;font-size:12px">${timeAgo(r.submitted_at)}</td>
+            <td><strong>${r.district || '—'}</strong>${r.neighborhood ? `<br><span style="font-size:11px;color:var(--muted)">${r.neighborhood}</span>` : ''}</td>
+            <td><span class="pill ${r.symptom_type || 'other'}">${r.symptom_type || 'other'}</span></td>
+            <td>${r.affected_count || '—'}</td>
+            <td>${r.age_group || '—'}</td>
+            <td>${r.onset || '—'}</td>
+            <td><div class="obs-text" title="${escHtml(r.observation || '')}">${escHtml(r.observation || '—')}</div></td>
+            <td>
+              <select class="status-pill ${r.status || 'new'}"
+                onchange="updateStatus(${r.id}, this.value, this)"
+                style="cursor:pointer;border:none;font-family:inherit;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;appearance:none;outline:none;">
+                <option value="new"       ${r.status==='new'       ?'selected':''}>new</option>
+                <option value="reviewed"  ${r.status==='reviewed'  ?'selected':''}>reviewed</option>
+                <option value="escalated" ${r.status==='escalated' ?'selected':''}>escalated</option>
+                <option value="closed"    ${r.status==='closed'    ?'selected':''}>closed</option>
+              </select>
+            </td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function updateStatus(id, status, el) {
+  el.className = `status-pill ${status}`;
+  await fetch(`/api/reports/${id}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+}
+
+function timeAgo(ts) {
+  if (!ts) return '—';
+  const diff = Date.now() - new Date(ts).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Auto-refresh
+load();
+setInterval(load, 60000);
+
+// Reload on filter change
+['filter-days','filter-symptom','filter-status'].forEach(id =>
+  document.getElementById(id).addEventListener('change', load)
+);
+document.getElementById('filter-district').addEventListener('keydown', e => {
+  if (e.key === 'Enter') load();
+});
+</script>
+
+</body>
+</html>
